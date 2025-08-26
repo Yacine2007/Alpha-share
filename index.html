@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Alpha Share - Remote Control</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <script src="/socket.io/socket.io.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.2/socket.io.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
     <style>
         :root {
@@ -75,8 +75,8 @@
             width: 10px;
             height: 10px;
             border-radius: 50%;
-            background-color: var(--success-color);
-            box-shadow: 0 0 8px var(--success-color);
+            background-color: var(--danger-color);
+            box-shadow: 0 0 8px var(--danger-color);
         }
         
         .connection-status {
@@ -84,6 +84,7 @@
             border-radius: 20px;
             font-size: 12px;
             font-weight: 500;
+            background-color: var(--danger-color);
         }
         
         .status-connected {
@@ -187,6 +188,7 @@
             width: 100%;
             height: 100%;
             object-fit: contain;
+            background-color: #000;
         }
         
         .vnc-controls {
@@ -276,18 +278,22 @@
         
         .cpu-progress {
             background: linear-gradient(90deg, var(--accent-color), #63b3ed);
+            width: 0%;
         }
         
         .ram-progress {
             background: linear-gradient(90deg, #9f7aea, #d6bcfa);
+            width: 0%;
         }
         
         .disk-progress {
             background: linear-gradient(90deg, var(--success-color), #68d391);
+            width: 0%;
         }
         
         .network-progress {
             background: linear-gradient(90deg, var(--warning-color), #f6ad55);
+            width: 0%;
         }
         
         .btn {
@@ -418,6 +424,42 @@
             width: 100%;
             height: 100%;
             object-fit: contain;
+            background-color: #000;
+        }
+        
+        .notification {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            padding: 15px;
+            background: var(--primary-color);
+            border-radius: 8px;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            transform: translateX(100%);
+            opacity: 0;
+            transition: all 0.3s ease;
+            z-index: 3000;
+            max-width: 300px;
+        }
+        
+        .notification.show {
+            transform: translateX(0);
+            opacity: 1;
+        }
+        
+        .notification i {
+            font-size: 20px;
+        }
+        
+        .notification.success {
+            border-left: 4px solid var(--success-color);
+        }
+        
+        .notification.error {
+            border-left: 4px solid var(--danger-color);
         }
         
         /* Scrollbar styling */
@@ -646,6 +688,14 @@
         </div>
     </div>
 
+    <div class="notification" id="notification">
+        <i class="fas fa-info-circle"></i>
+        <div>
+            <strong id="notificationTitle">Notification</strong>
+            <p id="notificationMessage">This is a notification message</p>
+        </div>
+    </div>
+
     <script>
         // المتغيرات العامة
         let socket = null;
@@ -663,11 +713,33 @@
         const vncContainer = document.getElementById('vncContainer');
         const remoteScreen = document.getElementById('remoteScreen');
         const fullscreenScreen = document.getElementById('fullscreenScreen');
+        const notification = document.getElementById('notification');
+        const notificationTitle = document.getElementById('notificationTitle');
+        const notificationMessage = document.getElementById('notificationMessage');
         
         // الأزرار
         const fullscreenBtn = document.getElementById('fullscreenBtn');
         const controlToggle = document.getElementById('controlToggle');
         const exitFullscreen = document.getElementById('exitFullscreen');
+        
+        // إظهار الإشعارات
+        function showNotification(title, message, type = 'info') {
+            notificationTitle.textContent = title;
+            notificationMessage.textContent = message;
+            
+            notification.className = 'notification';
+            if (type === 'success') {
+                notification.classList.add('success');
+            } else if (type === 'error') {
+                notification.classList.add('error');
+            }
+            
+            notification.classList.add('show');
+            
+            setTimeout(() => {
+                notification.classList.remove('show');
+            }, 3000);
+        }
         
         // تحديث حالة الاتصال
         function updateConnectionStatus(connected) {
@@ -675,6 +747,7 @@
             
             if (connected) {
                 statusDot.style.backgroundColor = 'var(--success-color)';
+                statusDot.style.boxShadow = '0 0 8px var(--success-color)';
                 statusText.textContent = 'Connected to Alpha OS';
                 connectionStatus.textContent = 'Connected';
                 connectionStatus.className = 'connection-status status-connected';
@@ -688,8 +761,11 @@
                 
                 fullscreenBtn.disabled = false;
                 controlToggle.disabled = false;
+                
+                showNotification('Connected', 'Successfully connected to Alpha OS', 'success');
             } else {
                 statusDot.style.backgroundColor = 'var(--danger-color)';
+                statusDot.style.boxShadow = '0 0 8px var(--danger-color)';
                 statusText.textContent = 'Disconnected';
                 connectionStatus.textContent = 'Disconnected';
                 connectionStatus.className = 'connection-status status-disconnected';
@@ -700,6 +776,8 @@
                         btn.disabled = true;
                     }
                 });
+                
+                showNotification('Disconnected', 'Connection to Alpha OS lost', 'error');
             }
         }
         
@@ -715,7 +793,7 @@
                 scanningInterval = setInterval(scanQRCode, 500);
             } catch (err) {
                 console.error('Error accessing camera:', err);
-                alert('Cannot access camera. Please check permissions.');
+                showNotification('Camera Error', 'Cannot access camera. Please check permissions.', 'error');
             }
         }
         
@@ -738,7 +816,7 @@
             }
         }
         
-        // الاتصال بالسيرفر
+        // الاتصال بالسيرفر على Render
         function connectToServer(uuid) {
             currentUUID = uuid;
             
@@ -751,8 +829,13 @@
             scanSection.style.display = 'none';
             vncContainer.style.display = 'block';
             
-            // الاتصال بالسيرفر
-            socket = io();
+            showNotification('Connecting', 'Connecting to Alpha OS...', 'info');
+            
+            // الاتصال بالسيرفر على Render
+            socket = io('https://alpha-share.onrender.com', {
+                transports: ['websocket', 'polling'],
+                timeout: 10000
+            });
             
             socket.on('connect', () => {
                 console.log('Connected to server');
@@ -765,7 +848,7 @@
                     updateConnectionStatus(true);
                 } else {
                     console.error('Failed to join room:', data.error);
-                    alert('Connection failed: ' + data.error);
+                    showNotification('Connection Failed', data.error, 'error');
                     resetConnection();
                 }
             });
@@ -776,19 +859,23 @@
                 fullscreenScreen.src = data.imageData;
             });
             
+            socket.on('system-stats', (data) => {
+                updateSystemStats(data.stats);
+            });
+            
+            socket.on('file-list', (data) => {
+                updateFileList(data.files);
+            });
+            
             socket.on('disconnect', () => {
                 console.log('Disconnected from server');
                 updateConnectionStatus(false);
             });
             
-            // استقبال تحديثات أداء النظام
-            socket.on('system-stats', (data) => {
-                updateSystemStats(data);
-            });
-            
-            // استقبال قائمة الملفات
-            socket.on('file-list', (data) => {
-                updateFileList(data.files);
+            socket.on('connect_error', (error) => {
+                console.error('Connection error:', error);
+                showNotification('Connection Error', error.message, 'error');
+                resetConnection();
             });
         }
         
@@ -803,8 +890,8 @@
             document.getElementById('diskUsage').textContent = stats.disk + '%';
             document.getElementById('diskProgress').style.width = stats.disk + '%';
             
-            document.getElementById('networkUsage').textContent = stats.network + '%';
-            document.getElementById('networkProgress').style.width = stats.network + '%';
+            document.getElementById('networkUsage').textContent = stats.network.toFixed(2) + ' MB';
+            document.getElementById('networkProgress').style.width = Math.min(stats.network / 10, 100) + '%';
         }
         
         // تحديث قائمة الملفات
@@ -815,15 +902,54 @@
             files.forEach(file => {
                 const li = document.createElement('li');
                 li.className = 'file-item';
+                
+                const fileSize = file.is_dir ? 'Folder' : formatFileSize(file.size);
+                const modifiedDate = new Date(file.modified).toLocaleDateString();
+                
                 li.innerHTML = `
-                    <span>${file.name}</span>
+                    <div>
+                        <div>${file.name}</div>
+                        <small>${fileSize} • ${modifiedDate}</small>
+                    </div>
                     <div class="file-actions">
-                        <i class="fas fa-download file-action" onclick="downloadFile('${file.name}')"></i>
-                        <i class="fas fa-edit file-action" onclick="editFile('${file.name}')"></i>
+                        ${!file.is_dir ? `<i class="fas fa-download file-action" onclick="downloadFile('${file.name}')"></i>` : ''}
+                        <i class="fas fa-folder-open file-action" onclick="openFolder('${file.name}')"></i>
                     </div>
                 `;
                 fileList.appendChild(li);
             });
+        }
+        
+        // تنسيق حجم الملف
+        function formatFileSize(bytes) {
+            if (bytes === 0) return '0 Bytes';
+            const k = 1024;
+            const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+        }
+        
+        // تحميل الملف
+        function downloadFile(fileName) {
+            if (socket && isConnected) {
+                socket.emit('request-file', {
+                    uuid: currentUUID,
+                    fileName: fileName
+                });
+                showNotification('Download', `Requesting file: ${fileName}`, 'info');
+            }
+        }
+        
+        // فتح المجلد
+        function openFolder(folderName) {
+            if (socket && isConnected) {
+                socket.emit('control-command', {
+                    uuid: currentUUID,
+                    command: 'open-folder',
+                    parameters: { folder: folderName }
+                });
+                showNotification('Folder', `Opening folder: ${folderName}`, 'info');
+            }
         }
         
         // إعادة تعيين الاتصال
@@ -865,6 +991,7 @@
                     uuid: currentUUID, 
                     command: 'disable-control' 
                 });
+                showNotification('Control', 'Remote control disabled', 'info');
             } else {
                 controlToggle.classList.add('active');
                 controlToggle.innerHTML = '<i class="fas fa-times"></i> Disable Control';
@@ -873,6 +1000,7 @@
                     uuid: currentUUID, 
                     command: 'enable-control' 
                 });
+                showNotification('Control', 'Remote control enabled', 'success');
             }
         });
         
@@ -895,36 +1023,62 @@
             // إعداد مستمعي الأزرار
             document.getElementById('fileManagerBtn').addEventListener('click', () => {
                 sendControlCommand('open-file-manager');
+                showNotification('File Manager', 'Opening file manager', 'info');
             });
             
             document.getElementById('terminalBtn').addEventListener('click', () => {
                 sendControlCommand('open-terminal');
+                showNotification('Terminal', 'Opening terminal', 'info');
             });
             
             document.getElementById('runProgramBtn').addEventListener('click', () => {
                 const program = prompt('Enter program name to run:');
                 if (program) {
                     sendControlCommand('run-program', { program });
+                    showNotification('Program', `Running program: ${program}`, 'info');
                 }
             });
             
             document.getElementById('alphaAIBtn').addEventListener('click', () => {
                 sendControlCommand('start-alpha-ai');
+                showNotification('Alpha AI', 'Starting Alpha AI', 'info');
             });
             
             document.getElementById('systemRepairBtn').addEventListener('click', () => {
-                sendControlCommand('system-repair');
+                if (confirm('Are you sure you want to run system repair?')) {
+                    sendControlCommand('system-repair');
+                    showNotification('System Repair', 'Running system repair', 'info');
+                }
             });
             
             document.getElementById('shutdownBtn').addEventListener('click', () => {
                 if (confirm('Are you sure you want to shutdown the remote system?')) {
                     sendControlCommand('shutdown');
+                    showNotification('Shutdown', 'Shutting down system', 'info');
                 }
             });
             
             document.getElementById('uploadBtn').addEventListener('click', () => {
-                // سيتم تنفيذ رفع الملف هنا
-                alert('File upload feature will be implemented here');
+                // إنشاء عنصر input لرفع الملف
+                const input = document.createElement('input');
+                input.type = 'file';
+                input.onchange = (e) => {
+                    const file = e.target.files[0];
+                    if (file) {
+                        const reader = new FileReader();
+                        reader.onload = (event) => {
+                            const fileData = btoa(event.target.result);
+                            socket.emit('upload-file', {
+                                uuid: currentUUID,
+                                fileName: file.name,
+                                fileData: fileData
+                            });
+                            showNotification('Upload', `Uploading file: ${file.name}`, 'info');
+                        };
+                        reader.readAsBinaryString(file);
+                    }
+                };
+                input.click();
             });
             
             // إعداد التنقل بين علامات التبويب
@@ -940,6 +1094,14 @@
                     // Show corresponding content
                     const tabId = button.getAttribute('data-tab');
                     document.getElementById(tabId).classList.add('active');
+                    
+                    // إذا كانت علامة تبويب الملفات، طلب قائمة الملفات
+                    if (tabId === 'files' && isConnected) {
+                        socket.emit('control-command', {
+                            uuid: currentUUID,
+                            command: 'get-file-list'
+                        });
+                    }
                 });
             });
         });
