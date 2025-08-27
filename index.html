@@ -173,7 +173,7 @@
         
         .vnc-container {
             position: relative;
-            padding-top: 56.25%; /* 16:9 Aspect Ratio */
+            padding-top: 56.25%;
             background: linear-gradient(135deg, #1a2a3a, #2c3e50);
             border-radius: 8px;
             overflow: hidden;
@@ -462,7 +462,10 @@
             border-left: 4px solid var(--danger-color);
         }
         
-        /* Scrollbar styling */
+        .notification.info {
+            border-left: 4px solid var(--accent-color);
+        }
+        
         ::-webkit-scrollbar {
             width: 6px;
             height: 6px;
@@ -482,7 +485,6 @@
             background: #3182ce;
         }
         
-        /* Responsive adjustments */
         @media (max-width: 480px) {
             .control-grid {
                 grid-template-columns: repeat(2, 1fr);
@@ -697,14 +699,12 @@
     </div>
 
     <script>
-        // المتغيرات العامة
         let socket = null;
         let currentUUID = null;
         let isConnected = false;
         let stream = null;
         let scanningInterval = null;
         
-        // عناصر DOM
         const statusDot = document.getElementById('statusDot');
         const statusText = document.getElementById('statusText');
         const connectionStatus = document.getElementById('connectionStatus');
@@ -717,23 +717,16 @@
         const notificationTitle = document.getElementById('notificationTitle');
         const notificationMessage = document.getElementById('notificationMessage');
         
-        // الأزرار
         const fullscreenBtn = document.getElementById('fullscreenBtn');
         const controlToggle = document.getElementById('controlToggle');
         const exitFullscreen = document.getElementById('exitFullscreen');
         
-        // إظهار الإشعارات
         function showNotification(title, message, type = 'info') {
             notificationTitle.textContent = title;
             notificationMessage.textContent = message;
             
             notification.className = 'notification';
-            if (type === 'success') {
-                notification.classList.add('success');
-            } else if (type === 'error') {
-                notification.classList.add('error');
-            }
-            
+            notification.classList.add(type);
             notification.classList.add('show');
             
             setTimeout(() => {
@@ -741,7 +734,6 @@
             }, 3000);
         }
         
-        // تحديث حالة الاتصال
         function updateConnectionStatus(connected) {
             isConnected = connected;
             
@@ -752,7 +744,6 @@
                 connectionStatus.textContent = 'Connected';
                 connectionStatus.className = 'connection-status status-connected';
                 
-                // تمكين الأزرار
                 document.querySelectorAll('.control-btn:disabled').forEach(btn => {
                     if (btn.id !== 'controlToggle' && btn.id !== 'fullscreenBtn') {
                         btn.disabled = false;
@@ -770,7 +761,6 @@
                 connectionStatus.textContent = 'Disconnected';
                 connectionStatus.className = 'connection-status status-disconnected';
                 
-                // تعطيل الأزرار
                 document.querySelectorAll('.control-btn').forEach(btn => {
                     if (btn.id !== 'exitFullscreen') {
                         btn.disabled = true;
@@ -781,7 +771,6 @@
             }
         }
         
-        // بدء مسح QR code
         async function startQRScan() {
             try {
                 stream = await navigator.mediaDevices.getUserMedia({ 
@@ -789,7 +778,6 @@
                 });
                 video.srcObject = stream;
                 
-                // بدء مسح QR code
                 scanningInterval = setInterval(scanQRCode, 500);
             } catch (err) {
                 console.error('Error accessing camera:', err);
@@ -797,7 +785,6 @@
             }
         }
         
-        // مسح QR code
         function scanQRCode() {
             if (video.readyState === video.HAVE_ENOUGH_DATA) {
                 const canvas = document.createElement('canvas');
@@ -816,29 +803,28 @@
             }
         }
         
-        // الاتصال بالسيرفر على Render
         function connectToServer(uuid) {
             currentUUID = uuid;
             
-            // إيقاف الكاميرا
             if (stream) {
                 stream.getTracks().forEach(track => track.stop());
             }
             
-            // إخفاء ماسح QR وإظهار شاشة VNC
             scanSection.style.display = 'none';
             vncContainer.style.display = 'block';
             
             showNotification('Connecting', 'Connecting to Alpha OS...', 'info');
             
-            // الاتصال بالسيرفر على Render
             socket = io('https://alpha-share.onrender.com', {
                 transports: ['websocket', 'polling'],
-                timeout: 10000
+                timeout: 15000,
+                reconnection: true,
+                reconnectionAttempts: 3,
+                reconnectionDelay: 1000
             });
             
             socket.on('connect', () => {
-                console.log('Connected to server');
+                console.log('Connected to server, joining room...');
                 socket.emit('join-room', uuid);
             });
             
@@ -854,7 +840,6 @@
             });
             
             socket.on('update-screen', (data) => {
-                // تحديث شاشة الجهاز البعيد
                 remoteScreen.src = data.imageData;
                 fullscreenScreen.src = data.imageData;
             });
@@ -879,7 +864,6 @@
             });
         }
         
-        // تحديث إحصائيات النظام
         function updateSystemStats(stats) {
             document.getElementById('cpuUsage').textContent = stats.cpu + '%';
             document.getElementById('cpuProgress').style.width = stats.cpu + '%';
@@ -894,7 +878,6 @@
             document.getElementById('networkProgress').style.width = Math.min(stats.network / 10, 100) + '%';
         }
         
-        // تحديث قائمة الملفات
         function updateFileList(files) {
             const fileList = document.getElementById('fileList');
             fileList.innerHTML = '';
@@ -920,7 +903,6 @@
             });
         }
         
-        // تنسيق حجم الملف
         function formatFileSize(bytes) {
             if (bytes === 0) return '0 Bytes';
             const k = 1024;
@@ -929,7 +911,6 @@
             return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
         }
         
-        // تحميل الملف
         function downloadFile(fileName) {
             if (socket && isConnected) {
                 socket.emit('request-file', {
@@ -940,7 +921,6 @@
             }
         }
         
-        // فتح المجلد
         function openFolder(folderName) {
             if (socket && isConnected) {
                 socket.emit('control-command', {
@@ -952,7 +932,6 @@
             }
         }
         
-        // إعادة تعيين الاتصال
         function resetConnection() {
             if (socket) {
                 socket.disconnect();
@@ -962,15 +941,12 @@
             currentUUID = null;
             updateConnectionStatus(false);
             
-            // إعادة عرض ماسح QR code
             scanSection.style.display = 'flex';
             vncContainer.style.display = 'none';
             
-            // إعادة تشغيل المسح
             startQRScan();
         }
         
-        // وضع ملء الشاشة
         fullscreenBtn.addEventListener('click', () => {
             document.body.style.overflow = 'hidden';
             document.getElementById('fullscreenMode').style.display = 'flex';
@@ -981,12 +957,10 @@
             document.getElementById('fullscreenMode').style.display = 'none';
         });
         
-        // تبديل التحكم
         controlToggle.addEventListener('click', () => {
             if (controlToggle.classList.contains('active')) {
                 controlToggle.classList.remove('active');
                 controlToggle.innerHTML = '<i class="fas fa-mouse-pointer"></i> Enable Control';
-                // إرسال أمر تعطيل التحكم إلى السيرفر
                 socket.emit('control-command', { 
                     uuid: currentUUID, 
                     command: 'disable-control' 
@@ -995,7 +969,6 @@
             } else {
                 controlToggle.classList.add('active');
                 controlToggle.innerHTML = '<i class="fas fa-times"></i> Disable Control';
-                // إرسال أمر تمكين التحكم إلى السيرفر
                 socket.emit('control-command', { 
                     uuid: currentUUID, 
                     command: 'enable-control' 
@@ -1004,7 +977,6 @@
             }
         });
         
-        // إرسال أوامر التحكم
         function sendControlCommand(command, parameters = {}) {
             if (socket && isConnected) {
                 socket.emit('control-command', { 
@@ -1015,12 +987,9 @@
             }
         }
         
-        // تهيئة التطبيق
         document.addEventListener('DOMContentLoaded', () => {
-            // بدء مسح QR code عند تحميل الصفحة
             startQRScan();
             
-            // إعداد مستمعي الأزرار
             document.getElementById('fileManagerBtn').addEventListener('click', () => {
                 sendControlCommand('open-file-manager');
                 showNotification('File Manager', 'Opening file manager', 'info');
@@ -1059,7 +1028,6 @@
             });
             
             document.getElementById('uploadBtn').addEventListener('click', () => {
-                // إنشاء عنصر input لرفع الملف
                 const input = document.createElement('input');
                 input.type = 'file';
                 input.onchange = (e) => {
@@ -1081,21 +1049,16 @@
                 input.click();
             });
             
-            // إعداد التنقل بين علامات التبويب
             document.querySelectorAll('.tab-btn').forEach(button => {
                 button.addEventListener('click', () => {
-                    // Remove active class from all buttons and content
                     document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
                     document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
                     
-                    // Add active class to clicked button
                     button.classList.add('active');
                     
-                    // Show corresponding content
                     const tabId = button.getAttribute('data-tab');
                     document.getElementById(tabId).classList.add('active');
                     
-                    // إذا كانت علامة تبويب الملفات، طلب قائمة الملفات
                     if (tabId === 'files' && isConnected) {
                         socket.emit('control-command', {
                             uuid: currentUUID,
