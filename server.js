@@ -8,25 +8,41 @@ const QRCode = require('qrcode');
 
 const app = express();
 const server = http.createServer(app);
-const io = socketIo(server);
+const io = socketIo(server, {
+  cors: {
+    origin: "*",
+    methods: ["GET", "POST"]
+  }
+});
 
 const PORT = process.env.PORT || 3000;
 const UUID_FILE_URL = 'https://raw.githubusercontent.com/Yacine2007/Alpha-AI-assistant/main/UUID%20QR%20code/UUID.txt';
 
-// تخزين للاتصالات النشطة
 const activeConnections = new Map();
 const reservedUUIDs = new Set();
 
-// خدمة الملفات الثابتة
 app.use(express.static(path.join(__dirname, 'public')));
-app.use(express.json());
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
-// مسار الرئيسي
 app.get('/', (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'index.html'));
+  res.json({ 
+    message: 'Alpha Share Server is running',
+    status: 'OK',
+    timestamp: new Date().toISOString(),
+    version: '1.0.0'
+  });
 });
 
-// مسار لإنشاء اتصال جديد (لجهاز الكمبيوتر)
+app.get('/health', (req, res) => {
+  res.json({ 
+    status: 'healthy',
+    server: 'Alpha Share',
+    version: '1.0.0',
+    connections: activeConnections.size
+  });
+});
+
 app.post('/api/register', async (req, res) => {
   try {
     const { uuid } = req.body;
@@ -35,7 +51,6 @@ app.post('/api/register', async (req, res) => {
       return res.status(400).json({ error: 'UUID is required' });
     }
     
-    // التحقق من أن UUID موجود في الملف على GitHub
     const response = await axios.get(UUID_FILE_URL);
     const uuids = response.data.split('\n').map(line => line.trim()).filter(line => line);
     
@@ -43,15 +58,12 @@ app.post('/api/register', async (req, res) => {
       return res.status(404).json({ error: 'UUID not found in the allowed list' });
     }
     
-    // التحقق من أن UUID غير مستخدم بالفعل
     if (reservedUUIDs.has(uuid)) {
       return res.status(409).json({ error: 'UUID is already in use' });
     }
     
-    // حجز UUID
     reservedUUIDs.add(uuid);
     
-    // إنشاء QR code
     const qrCodeData = await QRCode.toDataURL(uuid);
     
     res.json({ 
@@ -65,14 +77,12 @@ app.post('/api/register', async (req, res) => {
   }
 });
 
-// مسار لإلغاء حجز UUID (لجهاز الكمبيوتر)
 app.post('/api/unregister', (req, res) => {
   const { uuid } = req.body;
   
   if (uuid && reservedUUIDs.has(uuid)) {
     reservedUUIDs.delete(uuid);
     
-    // إغلاق أي اتصالات نشطة لهذا UUID
     if (activeConnections.has(uuid)) {
       const room = io.sockets.adapter.rooms.get(uuid);
       if (room) {
@@ -89,7 +99,6 @@ app.post('/api/unregister', (req, res) => {
   }
 });
 
-// مسار للتحقق من حالة الاتصال (للهاتف)
 app.get('/api/connection-status/:uuid', (req, res) => {
   const { uuid } = req.params;
   
@@ -100,90 +109,106 @@ app.get('/api/connection-status/:uuid', (req, res) => {
   }
 });
 
-// التعامل مع اتصالات Socket.io
 io.on('connection', (socket) => {
-  console.log('User connected:', socket.id);
+  console.log('🔗 User connected:', socket.id);
   
-  // انضمام إلى غرفة محددة بناءً على UUID
   socket.on('join-room', (uuid) => {
+    console.log('🚪 Join room request for UUID:', uuid);
     if (reservedUUIDs.has(uuid)) {
       socket.join(uuid);
       activeConnections.set(uuid, {
         phoneSocket: socket.id,
+        connectedAt: new Date(),
+        lastActivity: new Date()
+      });
+      
+      console.log(`✅ Socket ${socket.id} joined room ${uuid}`);
+      socket.emit('room-joined', { uuid: uuid, success: true });
+      
+      socket.to(uuid).emit('phone-connected', { 
+        socketId: socket.id,
         connectedAt: new Date()
       });
-      console.log(`Socket ${socket.id} joined room ${uuid}`);
-      
-      // إعلام جميع الأجهزة في الغرفة بالاتصال الجديد
-      socket.to(uuid).emit('phone-connected', { socketId: socket.id });
-      socket.emit('room-joined', { uuid, success: true });
     } else {
-      socket.emit('room-joined', { uuid, success: false, error: 'UUID not registered' });
+      console.log(`❌ UUID not registered: ${uuid}`);
+      socket.emit('room-joined', { uuid: uuid, success: false, error: 'UUID not registered' });
     }
   });
   
-  // إرسال أوامر التحكم إلى الكمبيوتر
   socket.on('control-command', (data) => {
     const { uuid, command, parameters } = data;
+    console.log(`📨 Command received for ${uuid}: ${command}`);
     
     if (activeConnections.has(uuid)) {
+      activeConnections.get(uuid).lastActivity = new Date();
       socket.to(uuid).emit('execute-command', { command, parameters });
-      console.log(`Command sent to room ${uuid}: ${command}`);
+    } else {
+      socket.emit('command-error', { error: 'No active connection for this UUID' });
     }
   });
   
-  // إرسال بيانات الشاشة من الكمبيوتر إلى الهاتف
-  socket.on('screen-data', (data) => {
-    const { uuid, imageData } = data;
+  socket.on('system-stats', (data) => {
+    const { uuid, stats } = data;
     
     if (activeConnections.has(uuid)) {
-      socket.to(uuid).emit('update-screen', { imageData });
+      activeConnections.get(uuid).lastActivity = new Date();
+      socket.to(uuid).emit('update-stats', { stats });
     }
   });
   
-  // إرسال ملف من الهاتف إلى الكمبيوتر
-  socket.on('upload-file', (data) => {
-    const { uuid, fileName, fileData } = data;
-    
-    if (activeConnections.has(uuid)) {
-      socket.to(uuid).emit('receive-file', { fileName, fileData });
-    }
-  });
-  
-  // طلب ملف من الكمبيوتر إلى الهاتف
   socket.on('request-file', (data) => {
     const { uuid, fileName } = data;
     
     if (activeConnections.has(uuid)) {
+      activeConnections.get(uuid).lastActivity = new Date();
       socket.to(uuid).emit('send-file', { fileName });
     }
   });
   
-  // إدارة إعدادات النظام
-  socket.on('system-settings', (data) => {
-    const { uuid, settings } = data;
+  socket.on('upload-file', (data) => {
+    const { uuid, fileName, fileData } = data;
     
     if (activeConnections.has(uuid)) {
-      socket.to(uuid).emit('apply-settings', { settings });
+      activeConnections.get(uuid).lastActivity = new Date();
+      socket.to(uuid).emit('receive-file', { fileName, fileData });
     }
   });
   
-  // قطع الاتصال
-  socket.on('disconnect', () => {
-    console.log('User disconnected:', socket.id);
+  socket.on('disconnect', (reason) => {
+    console.log('❌ User disconnected:', socket.id, reason);
     
-    // البحث عن UUID المرتبط بهذا الاتصال وإزالته
     for (let [uuid, connection] of activeConnections.entries()) {
       if (connection.phoneSocket === socket.id) {
         activeConnections.delete(uuid);
-        console.log(`Removed connection for UUID: ${uuid}`);
+        console.log(`🗑️ Removed connection for UUID: ${uuid}`);
         break;
       }
     }
   });
 });
 
-// بدء الخادم
+// تنظيف الاتصالات غير النشطة كل 5 دقائق
+setInterval(() => {
+  const now = new Date();
+  const inactiveTime = 5 * 60 * 1000; // 5 دقائق
+  
+  for (let [uuid, connection] of activeConnections.entries()) {
+    if (now - connection.lastActivity > inactiveTime) {
+      console.log(`🕒 Removing inactive connection: ${uuid}`);
+      activeConnections.delete(uuid);
+      
+      const room = io.sockets.adapter.rooms.get(uuid);
+      if (room) {
+        room.forEach(socketId => {
+          io.to(socketId).disconnectSockets(true);
+        });
+      }
+    }
+  }
+}, 5 * 60 * 1000);
+
 server.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
+  console.log(`🚀 Server running on port ${PORT}`);
+  console.log(`🌐 Health check: http://localhost:${PORT}/health`);
+  console.log(`📊 API status: http://localhost:${PORT}/`);
 });
