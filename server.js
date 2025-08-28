@@ -9,7 +9,7 @@ const app = express();
 const server = http.createServer(app);
 
 // Render يستخدم المنفذ من متغير البيئة
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 10000;
 
 const io = socketIo(server, {
   cors: {
@@ -59,6 +59,9 @@ io.on('connection', (socket) => {
     console.log('🚪 Join room request for UUID:', uuid);
     
     try {
+      // للاختبار، سنقبل جميع UUIDs دون التحقق من GitHub
+      // يمكنك إعادة تمكين التحقق لاحقاً
+      /*
       const response = await axios.get(UUID_FILE_URL);
       const uuids = response.data.split('\n').map(line => line.trim()).filter(line => line);
       
@@ -70,6 +73,7 @@ io.on('connection', (socket) => {
         });
         return;
       }
+      */
       
       if (reservedUUIDs.has(uuid)) {
         socket.emit('room-joined', { 
@@ -92,6 +96,11 @@ io.on('connection', (socket) => {
       console.log(`✅ Socket ${socket.id} joined room ${uuid}`);
       socket.emit('room-joined', { uuid: uuid, success: true });
       
+      // إرسال تحديث شاشة افتراضي للاختبار
+      socket.emit('update-screen', {
+        imageData: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII='
+      });
+      
     } catch (error) {
       console.error('Error verifying UUID:', error);
       socket.emit('room-joined', { 
@@ -107,6 +116,7 @@ io.on('connection', (socket) => {
     if (activeConnections.has(uuid)) {
       activeConnections.get(uuid).lastActivity = new Date();
       socket.to(uuid).emit('execute-command', { command, parameters });
+      console.log(`📨 Command sent to ${uuid}: ${command}`);
     }
   });
   
@@ -144,6 +154,7 @@ io.on('connection', (socket) => {
       if (connection.socketId === socket.id) {
         reservedUUIDs.delete(uuid);
         activeConnections.delete(uuid);
+        console.log(`🗑️ Removed UUID ${uuid} from active connections`);
         break;
       }
     }
