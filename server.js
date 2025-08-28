@@ -17,7 +17,9 @@ const io = socketIo(server, {
     methods: ["GET", "POST"],
     credentials: true
   },
-  transports: ['websocket', 'polling']
+  transports: ['websocket', 'polling'],
+  pingTimeout: 60000,
+  pingInterval: 25000
 });
 
 const UUID_FILE_URL = 'https://raw.githubusercontent.com/Yacine2007/Alpha-AI-assistant/main/UUID%20QR%20code/UUID.txt';
@@ -55,26 +57,17 @@ app.get('/health', (req, res) => {
 io.on('connection', (socket) => {
   console.log('🔗 User connected:', socket.id);
   
+  // إرسال حدث اتصال ناجح للعميل
+  socket.emit('connection-established', { 
+    message: 'Connected to server successfully',
+    socketId: socket.id
+  });
+  
   socket.on('join-room', async (uuid) => {
     console.log('🚪 Join room request for UUID:', uuid);
     
     try {
-      // للاختبار، سنقبل جميع UUIDs دون التحقق من GitHub
-      // يمكنك إعادة تمكين التحقق لاحقاً
-      /*
-      const response = await axios.get(UUID_FILE_URL);
-      const uuids = response.data.split('\n').map(line => line.trim()).filter(line => line);
-      
-      if (!uuids.includes(uuid)) {
-        socket.emit('room-joined', { 
-          uuid: uuid, 
-          success: false, 
-          error: 'UUID not registered in system' 
-        });
-        return;
-      }
-      */
-      
+      // قبول جميع UUIDs دون التحقق من GitHub للاختبار
       if (reservedUUIDs.has(uuid)) {
         socket.emit('room-joined', { 
           uuid: uuid, 
@@ -94,29 +87,57 @@ io.on('connection', (socket) => {
       });
       
       console.log(`✅ Socket ${socket.id} joined room ${uuid}`);
-      socket.emit('room-joined', { uuid: uuid, success: true });
+      socket.emit('room-joined', { 
+        uuid: uuid, 
+        success: true,
+        message: 'Successfully joined room'
+      });
       
-      // إرسال تحديث شاشة افتراضي للاختبار
+      // إرسال بيانات افتراضية للاختبار
       socket.emit('update-screen', {
         imageData: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII='
       });
       
+      // إرسال إحصائيات نظام افتراضية للاختبار
+      socket.emit('system-stats', {
+        stats: {
+          cpu: 15,
+          memory: 45,
+          disk: 30,
+          network: 2.5
+        }
+      });
+      
     } catch (error) {
-      console.error('Error verifying UUID:', error);
+      console.error('Error joining room:', error);
       socket.emit('room-joined', { 
         uuid: uuid, 
         success: false, 
-        error: 'Error verifying UUID' 
+        error: 'Internal server error' 
       });
     }
   });
   
   socket.on('control-command', (data) => {
     const { uuid, command, parameters } = data;
+    console.log(`📨 Control command received: ${command} for UUID: ${uuid}`);
+    
     if (activeConnections.has(uuid)) {
       activeConnections.get(uuid).lastActivity = new Date();
       socket.to(uuid).emit('execute-command', { command, parameters });
-      console.log(`📨 Command sent to ${uuid}: ${command}`);
+      
+      // إرسال رد للعميل
+      socket.emit('command-executed', {
+        success: true,
+        command: command,
+        message: 'Command sent successfully'
+      });
+    } else {
+      socket.emit('command-executed', {
+        success: false,
+        command: command,
+        message: 'UUID not found or not connected'
+      });
     }
   });
   
@@ -159,7 +180,16 @@ io.on('connection', (socket) => {
       }
     }
   });
+  
+  socket.on('error', (error) => {
+    console.error('Socket error:', error);
+  });
 });
+
+// دالة للحفاظ على الاتصالات النشطة
+setInterval(() => {
+  console.log(`🔄 Active connections: ${activeConnections.size}`);
+}, 30000);
 
 server.listen(PORT, '0.0.0.0', () => {
   console.log(`🚀 Server running on port ${PORT}`);
